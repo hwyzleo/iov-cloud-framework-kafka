@@ -1,1 +1,2 @@
 net.hwyz.iov.cloud.framework.kafka.autoconfigure.KafkaAutoConfiguration
+net.hwyz.iov.cloud.framework.kafka.autoconfigure.KafkaTopicProvisioningAutoConfiguration
