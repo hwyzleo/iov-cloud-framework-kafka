@@ -59,7 +59,8 @@ void onReady(KafkaTopicsReadyEvent event) { ... }
 ```
 
 - 状态包含 `DISABLED / NOT_READY / READY`，实现使用 `AtomicReference` 原子替换不可变快照。
-- `KafkaTopicsReadyEvent` 仅在首次由非 READY 进入 READY 时发布一次。
+- `KafkaTopicsReadyEvent` 仅在首次由非 READY 进入 READY 时发布一次，且由独立 TaskScheduler 线程投递——
+  监听器内可安全执行阻塞操作（DB/HTTP/锁），不会占用 Kafka AdminClient 内部线程。
 
 ### 4. 可观测性
 

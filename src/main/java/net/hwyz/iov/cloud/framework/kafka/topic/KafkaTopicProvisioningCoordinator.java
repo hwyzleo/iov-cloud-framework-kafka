@@ -22,7 +22,8 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>监听 {@link ApplicationReadyEvent}，通过独立 TaskScheduler 异步执行首次检查</li>
  *   <li>失败时按 min(initialInterval × multiplier^attempt, maxInterval) 指数退避持续重试</li>
- *   <li>状态原子切换；首次由非 READY 进入 READY 时发布 {@link KafkaTopicsReadyEvent}，重复成功不重复发布</li>
+ *   <li>状态原子切换；首次由非 READY 进入 READY 时经 TaskScheduler 线程投递 {@link KafkaTopicsReadyEvent}，
+ *       绝不占用 Kafka AdminClient 内部线程，重复成功不重复发布</li>
  * </ul>
  *
  * @author hwyz_leo
@@ -114,8 +115,14 @@ public class KafkaTopicProvisioningCoordinator implements ApplicationListener<Ap
         boolean changed = status.update(KafkaTopicProvisioningStatus.State.READY, Set.of(), null, null);
         log.info("Kafka Topic Provisioning 成功，createdTopics={}", result.createdTopics());
         if (changed) {
-            eventPublisher.publishEvent(new KafkaTopicsReadyEvent());
-            log.info("Kafka Topic Provisioning 已就绪，发布 KafkaTopicsReadyEvent");
+            // 状态先原子切换，事件再经独立 TaskScheduler 投递：
+            // handleResult 的完成回调运行在 Kafka AdminClient 内部线程上，
+            // 若在此直接 publishEvent，任何阻塞型监听器都会卡住 Admin 网络线程，
+            // 影响该 Admin 实例上全部异步管理操作。改经调度线程发布可从根本上规避。
+            taskScheduler.schedule(() -> {
+                eventPublisher.publishEvent(new KafkaTopicsReadyEvent());
+                log.info("Kafka Topic Provisioning 已就绪，发布 KafkaTopicsReadyEvent");
+            }, Instant.now());
         }
         attempt.set(0);
     }

@@ -21,6 +21,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import org.mockito.ArgumentCaptor;
 
 /**
  * KafkaTopicProvisioningCoordinator 单元测试：
@@ -46,6 +47,8 @@ class KafkaTopicProvisioningCoordinatorTest {
         status = new DefaultKafkaTopicProvisioningStatus();
         coordinator = newCoordinator(properties);
         when(catalog.definitions()).thenReturn(List.of(new KafkaTopicDefinition("t", 1, (short) 1)));
+        // 事件发布经 taskScheduler 投递（schedule(runnable, now)），与 fail 路径的重试调度
+        // 同签名，测试通过 ArgumentCaptor 区分并手动执行，避免 setUp 无脑执行引发递归。
     }
 
     private TopicProvisioningProperties defaultProperties() {
@@ -68,11 +71,31 @@ class KafkaTopicProvisioningCoordinatorTest {
         coordinator.handleResult(success, null);
         assertThat(status.state()).isEqualTo(READY);
         assertThat(status.missingTopics()).isEmpty();
+        // 事件先投递给 TaskScheduler，由调度线程执行后才发布
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        verify(taskScheduler).schedule(captor.capture(), any(Instant.class));
+        captor.getValue().run();
         verify(eventPublisher, times(1)).publishEvent(any(KafkaTopicsReadyEvent.class));
 
         // 重复成功不重复发布状态切换事件
         coordinator.handleResult(success, null);
         assertThat(status.state()).isEqualTo(READY);
+        verify(eventPublisher, times(1)).publishEvent(any(KafkaTopicsReadyEvent.class));
+    }
+
+    @Test
+    void readyEventIsDispatchedToTaskSchedulerNotPublishedOnCallingThread() {
+        // 验证事件不会在 handleResult 调用线程（即 Kafka AdminClient 内部线程）上直接发布，
+        // 而是先投递给 TaskScheduler，状态已同步切换为 READY。
+        coordinator.handleResult(KafkaTopicProvisioningResult.success(Set.of("t"), Set.of()), null);
+
+        assertThat(status.state()).isEqualTo(READY);
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        verify(taskScheduler).schedule(captor.capture(), any(Instant.class));
+        verify(eventPublisher, never()).publishEvent(any(KafkaTopicsReadyEvent.class));
+
+        // 调度线程执行被投递的任务后，事件才发布
+        captor.getValue().run();
         verify(eventPublisher, times(1)).publishEvent(any(KafkaTopicsReadyEvent.class));
     }
 
@@ -113,6 +136,9 @@ class KafkaTopicProvisioningCoordinatorTest {
         coordinator.handleResult(success, null);
         assertThat(status.state()).isEqualTo(READY);
         assertThat(status.missingTopics()).isEmpty();
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        verify(taskScheduler, times(2)).schedule(captor.capture(), any(Instant.class));
+        captor.getAllValues().get(1).run(); // 第二次调度为事件发布任务
         verify(eventPublisher, times(1)).publishEvent(any(KafkaTopicsReadyEvent.class));
     }
 
