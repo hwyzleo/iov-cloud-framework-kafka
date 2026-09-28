@@ -50,6 +50,8 @@ class KafkaTopicProvisioningCoordinatorTest {
 
     private TopicProvisioningProperties defaultProperties() {
         return new TopicProvisioningProperties(false, Duration.ZERO,
+                Duration.ofSeconds(10),
+                new TopicProvisioningProperties.Warmup(true, 3, Duration.ofSeconds(1)),
                 new TopicProvisioningProperties.Retry(Duration.ofSeconds(5), Duration.ofSeconds(60), 2.0),
                 List.of());
     }
@@ -117,6 +119,8 @@ class KafkaTopicProvisioningCoordinatorTest {
     @Test
     void backoffIsExponentialAndCappedAtMaxInterval() {
         properties = new TopicProvisioningProperties(false, Duration.ZERO,
+                Duration.ofSeconds(10),
+                new TopicProvisioningProperties.Warmup(true, 3, Duration.ofSeconds(1)),
                 new TopicProvisioningProperties.Retry(Duration.ofSeconds(1), Duration.ofSeconds(4), 2.0),
                 List.of());
         coordinator = newCoordinator(properties);
@@ -130,6 +134,8 @@ class KafkaTopicProvisioningCoordinatorTest {
     @Test
     void backoffRespectsInitialIntervalWhenMaxIsSmaller() {
         properties = new TopicProvisioningProperties(false, Duration.ZERO,
+                Duration.ofSeconds(10),
+                new TopicProvisioningProperties.Warmup(true, 3, Duration.ofSeconds(1)),
                 new TopicProvisioningProperties.Retry(Duration.ofSeconds(10), Duration.ofSeconds(2), 2.0),
                 List.of());
         coordinator = newCoordinator(properties);

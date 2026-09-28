@@ -6,6 +6,11 @@
       "sourceType": "net.hwyz.iov.cloud.framework.kafka.properties.TopicProvisioningProperties"
     },
     {
+      "name": "iov.kafka.topic-provisioning.warmup",
+      "type": "net.hwyz.iov.cloud.framework.kafka.properties.TopicProvisioningProperties$Warmup",
+      "sourceType": "net.hwyz.iov.cloud.framework.kafka.properties.TopicProvisioningProperties$Warmup"
+    },
+    {
       "name": "iov.kafka.topic-provisioning.retry",
       "type": "net.hwyz.iov.cloud.framework.kafka.properties.TopicProvisioningProperties$Retry",
       "sourceType": "net.hwyz.iov.cloud.framework.kafka.properties.TopicProvisioningProperties$Retry"
@@ -28,6 +33,30 @@
       "type": "java.time.Duration",
       "description": "应用就绪后的首次执行延迟，默认 0s。",
       "defaultValue": "0s"
+    },
+    {
+      "name": "iov.kafka.topic-provisioning.describe-timeout",
+      "type": "java.time.Duration",
+      "description": "describe 整次方法共享等待预算，默认 10s（短于 default.api.timeout.ms=30000）。",
+      "defaultValue": "10s"
+    },
+    {
+      "name": "iov.kafka.topic-provisioning.warmup.enabled",
+      "type": "java.lang.Boolean",
+      "description": "是否启用启动期连接预热，默认 true。",
+      "defaultValue": true
+    },
+    {
+      "name": "iov.kafka.topic-provisioning.warmup.attempts",
+      "type": "java.lang.Integer",
+      "description": "预热最大尝试次数，默认 3。",
+      "defaultValue": 3
+    },
+    {
+      "name": "iov.kafka.topic-provisioning.warmup.initial-backoff",
+      "type": "java.time.Duration",
+      "description": "预热首次退避间隔（按 2 倍增长），默认 1s。",
+      "defaultValue": "1s"
     },
     {
       "name": "iov.kafka.topic-provisioning.retry.initial-interval",

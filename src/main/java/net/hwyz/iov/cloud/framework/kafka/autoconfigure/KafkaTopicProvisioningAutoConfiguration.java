@@ -13,6 +13,7 @@ import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningMetrics;
 import net.hwyz.iov.cloud.framework.kafka.topic.PropertiesKafkaTopicDefinitionProvider;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -24,6 +25,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Kafka Topic Provisioning 自动配置（独立、可选）。
@@ -44,11 +48,25 @@ public class KafkaTopicProvisioningAutoConfiguration {
 
     /**
      * Kafka Admin Bean，应用关闭时释放资源。
+     * 在 KafkaProperties.buildAdminProperties() 结果副本上仅补齐未显式配置的韧性默认参数，
+     * 用户通过 Spring Boot 配置、环境变量或 Nacos 提供的显式值保持优先。
      */
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean(Admin.class)
     public Admin kafkaAdmin(KafkaProperties properties) {
-        return AdminClient.create(properties.buildAdminProperties());
+        return AdminClient.create(buildAdminProperties(properties));
+    }
+
+    /**
+     * 构建 Admin 连接参数：使用 putIfAbsent 仅补齐缺失的韧性默认值，不修改共享对象。
+     */
+    static Map<String, Object> buildAdminProperties(KafkaProperties properties) {
+        Map<String, Object> adminProperties = new HashMap<>(properties.buildAdminProperties());
+        adminProperties.putIfAbsent(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, 10_000);
+        adminProperties.putIfAbsent(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, 30_000);
+        adminProperties.putIfAbsent(AdminClientConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, 600_000);
+        adminProperties.putIfAbsent(AdminClientConfig.METADATA_MAX_AGE_CONFIG, 300_000);
+        return adminProperties;
     }
 
     /**
