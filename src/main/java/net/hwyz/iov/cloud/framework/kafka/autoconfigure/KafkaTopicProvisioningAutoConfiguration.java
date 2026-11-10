@@ -101,8 +101,10 @@ public class KafkaTopicProvisioningAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public KafkaTopicProvisioner kafkaTopicProvisioner(Admin admin) {
-        return new DefaultKafkaTopicProvisioner(admin);
+    public KafkaTopicProvisioner kafkaTopicProvisioner(Admin admin,
+                                                      TopicProvisioningProperties properties) {
+        // describe 整次调用共享 iov.kafka.topic-provisioning.describe-timeout 预算
+        return new DefaultKafkaTopicProvisioner(admin, properties.describeTimeout());
     }
 
     /**

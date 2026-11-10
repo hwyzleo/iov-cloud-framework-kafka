@@ -9,6 +9,7 @@ import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -16,17 +17,22 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 默认 Topic Provisioner：基于 Kafka Admin 接口实现。
  * <ol>
  *   <li>describeTopics 逐 Topic 查询现有 Topic；UnknownTopicOrPartitionException 判定为缺失</li>
+ *   <li>describe 阶段共享一个由 {@code iov.kafka.topic-provisioning.describe-timeout} 声明的等待预算，
+ *       超时按结构化失败处理，不随 Topic 数量线性倍增</li>
  *   <li>计算缺失集合</li>
  *   <li>批量 createTopics</li>
  *   <li>逐 Topic 汇总结果；TopicExistsException 视为成功（并发/已存在幂等）</li>
@@ -38,10 +44,39 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class DefaultKafkaTopicProvisioner implements KafkaTopicProvisioner {
 
-    private final Admin admin;
+    /**
+     * 未显式指定时的 describe 预算，与
+     * {@code iov.kafka.topic-provisioning.describe-timeout} 的默认值（10s）保持一致。
+     * 框架自动配置始终显式传入配置值，此默认仅用于直接构造（如下游集成测试）。
+     */
+    private static final Duration DEFAULT_DESCRIBE_TIMEOUT = Duration.ofSeconds(10);
 
+    private final Admin admin;
+    private final Duration describeTimeout;
+
+    /**
+     * 使用默认 describe 预算（10s）构造，保持对下游直接实例化的源码兼容。
+     *
+     * @param admin Kafka Admin，不得为空
+     */
     public DefaultKafkaTopicProvisioner(Admin admin) {
+        this(admin, DEFAULT_DESCRIBE_TIMEOUT);
+    }
+
+    /**
+     * 指定 describe 预算构造。
+     *
+     * @param admin           Kafka Admin，不得为空
+     * @param describeTimeout 整次 describe 调用的共享等待预算，必须为正时长
+     */
+    public DefaultKafkaTopicProvisioner(Admin admin, Duration describeTimeout) {
+        Objects.requireNonNull(admin, "admin 不能为空");
+        Objects.requireNonNull(describeTimeout, "describeTimeout 不能为空");
+        if (describeTimeout.isZero() || describeTimeout.isNegative()) {
+            throw new IllegalArgumentException("describeTimeout 必须为正时长");
+        }
         this.admin = admin;
+        this.describeTimeout = describeTimeout;
     }
 
     @Override
@@ -73,6 +108,8 @@ public class DefaultKafkaTopicProvisioner implements KafkaTopicProvisioner {
 
     /**
      * 逐 Topic 收集已存在集合；任意非"Topic 不存在"异常视为 describe 不可靠。
+     * <p>整个 describe 阶段共享一个 {@link #describeTimeout} 预算（订阅一次 deadline），
+     * 不随 Topic 数量线性倍增；超时转为 {@link TimeoutException}，由上层汇总为结构化失败。</p>
      */
     private CompletionStage<Set<String>> collectExisting(DescribeTopicsResult result, Set<String> declared) {
         Set<String> existing = new HashSet<>();
@@ -90,6 +127,7 @@ public class DefaultKafkaTopicProvisioner implements KafkaTopicProvisioner {
             }).toCompletableFuture());
         }
         return CompletableFuture.allOf(pending.toArray(new CompletableFuture[0]))
+                .orTimeout(Math.max(1L, describeTimeout.toMillis()), TimeUnit.MILLISECONDS)
                 .thenApply(ignored -> {
                     Throwable failure = describeFailure.get();
                     if (failure != null) {

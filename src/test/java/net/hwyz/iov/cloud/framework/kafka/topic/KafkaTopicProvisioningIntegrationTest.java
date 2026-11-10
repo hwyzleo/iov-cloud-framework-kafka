@@ -73,7 +73,7 @@ class KafkaTopicProvisioningIntegrationTest {
         String name = newTopicName();
         KafkaTopicDefinition definition = new KafkaTopicDefinition(name, 2, (short) 1,
                 Map.of("cleanup.policy", "delete"));
-        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin);
+        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin, java.time.Duration.ofSeconds(10));
 
         KafkaTopicProvisioningResult result = provisioner.ensureTopics(List.of(definition))
                 .toCompletableFuture().get(10, TimeUnit.SECONDS);
@@ -90,7 +90,7 @@ class KafkaTopicProvisioningIntegrationTest {
     void repeatedProvisioningIsIdempotent() throws Exception {
         String name = newTopicName();
         KafkaTopicDefinition definition = new KafkaTopicDefinition(name, 1, (short) 1);
-        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin);
+        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin, java.time.Duration.ofSeconds(10));
 
         KafkaTopicProvisioningResult first = provisioner.ensureTopics(List.of(definition))
                 .toCompletableFuture().get(10, TimeUnit.SECONDS);
@@ -111,7 +111,7 @@ class KafkaTopicProvisioningIntegrationTest {
                 Map.of("cleanup.policy", "compact"));
         KafkaTopicDefinition altered = new KafkaTopicDefinition(name, 1, (short) 1,
                 Map.of("cleanup.policy", "delete"));
-        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin);
+        DefaultKafkaTopicProvisioner provisioner = new DefaultKafkaTopicProvisioner(admin, java.time.Duration.ofSeconds(10));
 
         provisioner.ensureTopics(List.of(created)).toCompletableFuture().get(10, TimeUnit.SECONDS);
 

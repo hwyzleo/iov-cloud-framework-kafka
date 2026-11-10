@@ -14,6 +14,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +41,7 @@ class DefaultKafkaTopicProvisionerTest {
     @BeforeEach
     void setUp() {
         admin = mock(Admin.class);
-        provisioner = new DefaultKafkaTopicProvisioner(admin);
+        provisioner = new DefaultKafkaTopicProvisioner(admin, Duration.ofSeconds(10));
     }
 
     private static TopicDescription desc(String name) {
@@ -175,5 +176,52 @@ class DefaultKafkaTopicProvisionerTest {
         assertThat(result.missingTopics()).containsExactly("t");
         assertThat(result.failures().get("t")).isInstanceOf(TimeoutException.class);
         verify(admin, never()).createTopics(anyCollection());
+    }
+
+    /**
+     * describe-timeout 必须真正生效：broker 不返回时按共享等待预算超时失败，
+     * 而不是无限期挂在 AdminClient 默认超时上。
+     */
+    @Test
+    void describeTimeoutIsEnforcedAsSharedBudget() throws Exception {
+        DefaultKafkaTopicProvisioner briefProvisioner =
+                new DefaultKafkaTopicProvisioner(admin, Duration.ofMillis(100));
+        KafkaTopicDefinition t1 = new KafkaTopicDefinition("t1", 1, (short) 1);
+        KafkaTopicDefinition t2 = new KafkaTopicDefinition("t2", 1, (short) 1);
+
+        DescribeTopicsResult describeResult = mock(DescribeTopicsResult.class);
+        when(admin.describeTopics(anyCollection())).thenReturn(describeResult);
+        // 永不完成的 future：模拟 broker 无响应
+        KafkaFuture<TopicDescription> hanging = mock(KafkaFuture.class);
+        when(hanging.toCompletionStage()).thenReturn(new CompletableFuture<>());
+        when(describeResult.values()).thenReturn(Map.of("t1", hanging, "t2", hanging));
+
+        long startNanos = System.nanoTime();
+        KafkaTopicProvisioningResult result = briefProvisioner.ensureTopics(List.of(t1, t2))
+                .toCompletableFuture().get(5, TimeUnit.SECONDS);
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startNanos);
+
+        assertThat(result.successful()).isFalse();
+        assertThat(result.missingTopics()).containsExactlyInAnyOrder("t1", "t2");
+        assertThat(result.failures().values()).allMatch(TimeoutException.class::isInstance);
+        // 共享预算：两个 Topic 不会各等一份预算
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(2));
+        verify(admin, never()).createTopics(anyCollection());
+    }
+
+    @Test
+    void constructorRejectsInvalidArguments() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new DefaultKafkaTopicProvisioner(null, Duration.ofSeconds(1)))
+                .isInstanceOf(NullPointerException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new DefaultKafkaTopicProvisioner(admin, null))
+                .isInstanceOf(NullPointerException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new DefaultKafkaTopicProvisioner(admin, Duration.ZERO))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> new DefaultKafkaTopicProvisioner(admin, Duration.ofMillis(-1)))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

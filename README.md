@@ -29,7 +29,10 @@ iov:
             cleanup.policy: delete
 ```
 
-- `enabled` 默认 `false`，未启用时不创建 Admin、Catalog、Coordinator、TaskScheduler 或指标。
+- `enabled` 默认 `false`，未启用时不创建 Admin、Catalog、Coordinator 或指标；Provisioning 状态 Bean 始终存在，关闭时为 `DISABLED`。
+- `describe-timeout`（默认 10s）是**整次** describe 调用的共享等待预算，不随 Topic 数量线性倍增，超时按结构化失败交由 Coordinator 退避重试。
+- Provisioning 使用自己的单线程调度器（线程名 `kafka-topic-provisioning-*`），**不以 `TaskScheduler` 类型 Bean 暴露**，不会顶掉 Spring Boot 默认 `taskScheduler`，也不影响业务 `@Scheduled`。
+- Admin Bean 名为 `kafkaTopicProvisioningAdmin`（与 Spring Boot 的 `kafkaAdmin` 区分），用户自定义 `Admin` Bean 时框架退让。
 - Topic 可由 application 配置或 Nacos 集中配置提供。
 - 未设置 `configs` 时使用 broker 默认 Topic 配置。
 - Admin 连接、认证、SSL/SASL 参数复用 Spring Boot `spring.kafka.*` 的 Admin 属性。
@@ -59,6 +62,7 @@ void onReady(KafkaTopicsReadyEvent event) { ... }
 ```
 
 - 状态包含 `DISABLED / NOT_READY / READY`，实现使用 `AtomicReference` 原子替换不可变快照。
+- 状态 Bean 独立于 `enabled` 条件，业务可无条件注入：关闭时保持 `DISABLED`，启用后初始为 `NOT_READY`，全部 Topic 就绪后切换 `READY`。
 - `KafkaTopicsReadyEvent` 仅在首次由非 READY 进入 READY 时发布一次，且由独立 TaskScheduler 线程投递——
   监听器内可安全执行阻塞操作（DB/HTTP/锁），不会占用 Kafka AdminClient 内部线程。
 
@@ -78,6 +82,7 @@ Provisioning 状态不加入 Spring readiness group。
 - 幂等：已存在 Topic 视为成功；多实例并发创建时 `TopicExistsException` 同样视为成功，不引入分布式锁。
 - 重试：broker 故障时服务继续启动并保持 `NOT_READY`，按 `min(initialInterval × multiplier^attempt, maxInterval)` 持续后台重试，broker 恢复后自动切换 `READY`。
 - 不内置业务 Topic、不感知业务 Outbox/Relay、不删除或修改已有 Topic、不扩分区、不执行 alterConfigs、不授予 ACL。
+- 调度独立性：Provisioning 的调度器由 Coordinator 托管，不是容器 Bean；应用默认调度器、业务注入的 `TaskScheduler` 均不受影响。
 - 使用方启用后，运行 Principal 必须具备 `DescribeTopics` / `CreateTopics` 权限。
 - 回滚：设置 `iov.kafka.topic-provisioning.enabled=false` 即可停用，不影响现有 Producer。
 
