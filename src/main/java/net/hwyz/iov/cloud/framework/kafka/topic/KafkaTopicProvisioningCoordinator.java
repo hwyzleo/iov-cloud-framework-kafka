@@ -7,6 +7,7 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ApplicationListener;
 import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -65,6 +66,19 @@ public class KafkaTopicProvisioningCoordinator implements ApplicationListener<Ap
         if (started.compareAndSet(false, true)) {
             log.info("Kafka Topic Provisioning 已启动，调度首次执行，initialDelay={}", properties.initialDelay());
             scheduleRun(properties.initialDelay());
+        }
+    }
+
+    /**
+     * 释放本协调器托管的调度线程池。
+     *
+     * <p>调度器由自动配置在 Bean 方法内创建后交给本类托管，而不是作为 {@code TaskScheduler}
+     * 类型 Bean 暴露到容器（否则会顶掉 Spring Boot 的默认 {@code taskScheduler}，并让业务按
+     * 类型注入 {@code TaskScheduler} 时产生多候选）。因此其生命周期由本方法负责回收。</p>
+     */
+    public void close() {
+        if (taskScheduler instanceof ThreadPoolTaskScheduler threadPoolTaskScheduler) {
+            threadPoolTaskScheduler.shutdown();
         }
     }
 

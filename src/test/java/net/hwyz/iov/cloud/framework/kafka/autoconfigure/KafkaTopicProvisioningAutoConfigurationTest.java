@@ -13,9 +13,14 @@ import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
+import org.springframework.boot.autoconfigure.task.TaskSchedulingAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.reactive.ReactiveKafkaProducerTemplate;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.time.Duration;
 import java.util.List;
@@ -158,6 +163,44 @@ class KafkaTopicProvisioningAutoConfigurationTest {
                     assertThat(context.getBean("kafkaTopicProvisioningAdmin")).isInstanceOf(Admin.class);
                     assertThat(context).hasSingleBean(KafkaTopicProvisioningCoordinator.class);
                 });
+    }
+
+    /**
+     * Provisioning 不得占用应用的默认调度器。
+     * <p>
+     * 缺陷：本配置曾把内部调度器注册为 {@code TaskScheduler} 类型 Bean（
+     * {@code kafkaTopicProvisioningTaskScheduler}），而 Spring Boot 的
+     * {@code TaskSchedulingAutoConfiguration#taskScheduler} 条件是
+     * {@code @ConditionalOnMissingBean({SchedulingConfigurer, TaskScheduler, ScheduledExecutorService})}，
+     * 导致应用默认 {@code taskScheduler} 退让：没有自定义 {@code SchedulingConfigurer} 的服务，
+     * 所有 {@code @Scheduled} 任务都会跑在单线程的 {@code kafka-topic-provisioning-*} 池上。
+     */
+    @Test
+    void provisioningSchedulerDoesNotDisplaceApplicationTaskScheduler() {
+        new ApplicationContextRunner()
+                .withBean(KafkaProperties.class, KafkaTopicProvisioningAutoConfigurationTest::kafkaProperties)
+                .withUserConfiguration(SchedulingEnabledConfiguration.class)
+                .withConfiguration(AutoConfigurations.of(
+                        TaskSchedulingAutoConfiguration.class,
+                        KafkaTopicProvisioningAutoConfiguration.class))
+                .withPropertyValues(
+                        "iov.kafka.topic-provisioning.enabled=true",
+                        "iov.kafka.topic-provisioning.topics[0].name=sample.event",
+                        "iov.kafka.topic-provisioning.topics[0].partitions=3",
+                        "iov.kafka.topic-provisioning.topics[0].replication-factor=1")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasSingleBean(KafkaTopicProvisioningCoordinator.class);
+                    assertThat(context).hasBean("taskScheduler");
+                    assertThat(context.getBean("taskScheduler")).isInstanceOf(ThreadPoolTaskScheduler.class);
+                    // 容器内只应有应用自己的 taskScheduler，Provisioning 调度器不进容器
+                    assertThat(context.getBeansOfType(TaskScheduler.class)).containsOnlyKeys("taskScheduler");
+                });
+    }
+
+    @EnableScheduling
+    @Configuration(proxyBeanMethods = false)
+    static class SchedulingEnabledConfiguration {
     }
 
     @Test

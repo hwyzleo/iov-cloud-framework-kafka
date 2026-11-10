@@ -24,7 +24,6 @@ import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
-import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.HashMap;
@@ -111,27 +110,35 @@ public class KafkaTopicProvisioningAutoConfiguration {
 
     /**
      * 独立 TaskScheduler，避免依赖/占用应用默认调度器。
+     *
+     * <p>故意<b>不</b>注册为容器 Bean：Spring Boot 的
+     * {@code TaskSchedulingAutoConfiguration#taskScheduler} 的条件是
+     * {@code @ConditionalOnMissingBean({SchedulingConfigurer, TaskScheduler, ScheduledExecutorService})}，
+     * 一旦本配置暴露任意 {@code TaskScheduler} 类型 Bean，就会顶掉应用默认调度器，
+     * 使未自定义 {@code SchedulingConfigurer} 的服务的所有 {@code @Scheduled} 任务
+     * 落到该单线程池（线程名 {@code kafka-topic-provisioning-*}）上；同时会让业务按类型
+     * 注入 {@code TaskScheduler} 时出现多候选。</p>
      */
-    @Bean
-    public TaskScheduler kafkaTopicProvisioningTaskScheduler() {
+    private static ThreadPoolTaskScheduler provisioningTaskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
         scheduler.setPoolSize(1);
         scheduler.setThreadNamePrefix("kafka-topic-provisioning-");
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        // 非容器管理，必须显式初始化线程池
+        scheduler.initialize();
         return scheduler;
     }
 
-    @Bean
+    @Bean(destroyMethod = "close")
     public KafkaTopicProvisioningCoordinator kafkaTopicProvisioningCoordinator(
             KafkaTopicCatalog catalog,
             KafkaTopicProvisioner provisioner,
             DefaultKafkaTopicProvisioningStatus status,
-            TaskScheduler taskScheduler,
             ApplicationEventPublisher eventPublisher,
             TopicProvisioningProperties properties,
             ObjectProvider<KafkaTopicProvisioningMetrics> metricsProvider) {
-        return new KafkaTopicProvisioningCoordinator(catalog, provisioner, status, taskScheduler,
-                eventPublisher, properties, metricsProvider.getIfAvailable());
+        return new KafkaTopicProvisioningCoordinator(catalog, provisioner, status,
+                provisioningTaskScheduler(), eventPublisher, properties, metricsProvider.getIfAvailable());
     }
 
     /**
