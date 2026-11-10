@@ -10,6 +10,7 @@ import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicDefinitionProvider;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioner;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningCoordinator;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningMetrics;
+import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningStatus;
 import net.hwyz.iov.cloud.framework.kafka.topic.PropertiesKafkaTopicDefinitionProvider;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -28,6 +29,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Kafka Topic Provisioning 自动配置（独立、可选）。
@@ -103,11 +105,6 @@ public class KafkaTopicProvisioningAutoConfiguration {
         return new DefaultKafkaTopicProvisioner(admin);
     }
 
-    @Bean
-    public DefaultKafkaTopicProvisioningStatus kafkaTopicProvisioningStatus() {
-        return new DefaultKafkaTopicProvisioningStatus();
-    }
-
     /**
      * 独立 TaskScheduler，避免依赖/占用应用默认调度器。
      *
@@ -137,6 +134,8 @@ public class KafkaTopicProvisioningAutoConfiguration {
             ApplicationEventPublisher eventPublisher,
             TopicProvisioningProperties properties,
             ObjectProvider<KafkaTopicProvisioningMetrics> metricsProvider) {
+        // 状态 Bean 始终存在（关闭时为 DISABLED），启用 Provisioning 后初始态为 NOT_READY
+        status.update(KafkaTopicProvisioningStatus.State.NOT_READY, Set.of(), null, null);
         return new KafkaTopicProvisioningCoordinator(catalog, provisioner, status,
                 provisioningTaskScheduler(), eventPublisher, properties, metricsProvider.getIfAvailable());
     }

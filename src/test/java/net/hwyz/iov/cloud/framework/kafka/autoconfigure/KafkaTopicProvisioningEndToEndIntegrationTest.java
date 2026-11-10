@@ -61,7 +61,9 @@ class KafkaTopicProvisioningEndToEndIntegrationTest {
         String topic = "iov-e2e-" + UUID.randomUUID();
 
         new ApplicationContextRunner()
-                .withConfiguration(AutoConfigurations.of(KafkaTopicProvisioningAutoConfiguration.class))
+                .withConfiguration(AutoConfigurations.of(
+                        KafkaTopicProvisioningStatusAutoConfiguration.class,
+                        KafkaTopicProvisioningAutoConfiguration.class))
                 .withBean(KafkaProperties.class, () -> {
                     KafkaProperties properties = new KafkaProperties();
                     properties.setBootstrapServers(List.of(BOOTSTRAP));

@@ -8,6 +8,7 @@ import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicCatalog;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioner;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningCoordinator;
 import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningMetrics;
+import net.hwyz.iov.cloud.framework.kafka.topic.KafkaTopicProvisioningStatus;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.junit.jupiter.api.Test;
@@ -35,13 +36,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class KafkaTopicProvisioningAutoConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
-            .withBean(KafkaProperties.class, KafkaTopicProvisioningAutoConfigurationTest::kafkaProperties);
+            .withBean(KafkaProperties.class, KafkaTopicProvisioningAutoConfigurationTest::kafkaProperties)
+            .withConfiguration(AutoConfigurations.of(KafkaTopicProvisioningStatusAutoConfiguration.class));
 
     /** 同时装配公共 KafkaAdminOperations 自动配置的 runner，模拟真实应用。 */
     private final ApplicationContextRunner supportRunner = new ApplicationContextRunner()
             .withBean(KafkaProperties.class, KafkaTopicProvisioningAutoConfigurationTest::kafkaProperties)
             .withConfiguration(AutoConfigurations.of(
                     KafkaAdminOperationsAutoConfiguration.class,
+                    KafkaTopicProvisioningStatusAutoConfiguration.class,
                     KafkaTopicProvisioningAutoConfiguration.class));
 
     private static KafkaProperties kafkaProperties() {
@@ -51,14 +54,17 @@ class KafkaTopicProvisioningAutoConfigurationTest {
     }
 
     @Test
-    void disabledByDefaultDoesNotCreateProvisioningBeans() {
+    void disabledByDefaultCreatesOnlyDisabledStatus() {
         runner.withConfiguration(AutoConfigurations.of(KafkaTopicProvisioningAutoConfiguration.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
+                    // 状态 Bean 始终可注入，关闭时保持 DISABLED（FW-KAFKA-SPEC 设计 §3.6 / §6）
+                    assertThat(context).hasSingleBean(DefaultKafkaTopicProvisioningStatus.class);
+                    assertThat(context.getBean(KafkaTopicProvisioningStatus.class).state())
+                            .isEqualTo(KafkaTopicProvisioningStatus.State.DISABLED);
                     assertThat(context).doesNotHaveBean(Admin.class);
                     assertThat(context).doesNotHaveBean(KafkaTopicCatalog.class);
                     assertThat(context).doesNotHaveBean(KafkaTopicProvisioner.class);
-                    assertThat(context).doesNotHaveBean(DefaultKafkaTopicProvisioningStatus.class);
                     assertThat(context).doesNotHaveBean(KafkaTopicProvisioningCoordinator.class);
                 });
     }
@@ -77,6 +83,8 @@ class KafkaTopicProvisioningAutoConfigurationTest {
                     assertThat(context).hasSingleBean(KafkaTopicCatalog.class);
                     assertThat(context).hasSingleBean(KafkaTopicProvisioner.class);
                     assertThat(context).hasSingleBean(DefaultKafkaTopicProvisioningStatus.class);
+                    assertThat(context.getBean(KafkaTopicProvisioningStatus.class).state())
+                            .isEqualTo(KafkaTopicProvisioningStatus.State.NOT_READY);
                     assertThat(context).hasSingleBean(KafkaTopicProvisioningCoordinator.class);
                 });
     }
@@ -148,6 +156,7 @@ class KafkaTopicProvisioningAutoConfigurationTest {
         new ApplicationContextRunner()
                 .withAllowBeanDefinitionOverriding(false)
                 .withConfiguration(AutoConfigurations.of(
+                        KafkaTopicProvisioningStatusAutoConfiguration.class,
                         org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration.class,
                         KafkaTopicProvisioningAutoConfiguration.class))
                 .withPropertyValues(
@@ -181,6 +190,7 @@ class KafkaTopicProvisioningAutoConfigurationTest {
                 .withBean(KafkaProperties.class, KafkaTopicProvisioningAutoConfigurationTest::kafkaProperties)
                 .withUserConfiguration(SchedulingEnabledConfiguration.class)
                 .withConfiguration(AutoConfigurations.of(
+                        KafkaTopicProvisioningStatusAutoConfiguration.class,
                         TaskSchedulingAutoConfiguration.class,
                         KafkaTopicProvisioningAutoConfiguration.class))
                 .withPropertyValues(
