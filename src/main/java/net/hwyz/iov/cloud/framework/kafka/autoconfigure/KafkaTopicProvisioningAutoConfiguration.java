@@ -19,6 +19,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,21 +40,29 @@ import java.util.Map;
  *   <li>不注册 Spring readiness HealthIndicator</li>
  * </ul>
  *
+ * <p>装配顺序显式后置到 Spring Boot 的 {@code KafkaAutoConfiguration}：本配置的 Admin Bean
+ * 属 Provisioning 专用，不得抢占 Spring Boot 的 {@code kafkaAdmin}（类型
+ * {@code org.springframework.kafka.core.KafkaAdmin}）Bean 名，否则在
+ * {@code spring.main.allow-bean-definition-overriding=false}（Spring Boot 默认）下必然启动失败。
+ * 两个 {@code @ConditionalOnMissingBean} 条件基于不同类型（{@code Admin} 与 {@code KafkaAdmin}），
+ * 彼此不会互相退让，只能靠 Bean 名区分。</p>
+ *
  * @author hwyz_leo
  */
-@AutoConfiguration
+@AutoConfiguration(after = KafkaAutoConfiguration.class)
 @ConditionalOnProperty(prefix = "iov.kafka.topic-provisioning", name = "enabled", havingValue = "true")
 @EnableConfigurationProperties(TopicProvisioningProperties.class)
 public class KafkaTopicProvisioningAutoConfiguration {
 
     /**
-     * Kafka Admin Bean，应用关闭时释放资源。
+     * Provisioning 专用 Kafka Admin Bean，应用关闭时释放资源。
+     * <p>Bean 名刻意与 Spring Boot 的 {@code kafkaAdmin} 区分；用户提供同类型 {@code Admin} Bean 时框架退让。</p>
      * 在 KafkaProperties.buildAdminProperties() 结果副本上仅补齐未显式配置的韧性默认参数，
      * 用户通过 Spring Boot 配置、环境变量或 Nacos 提供的显式值保持优先。
      */
     @Bean(destroyMethod = "close")
     @ConditionalOnMissingBean(Admin.class)
-    public Admin kafkaAdmin(KafkaProperties properties) {
+    public Admin kafkaTopicProvisioningAdmin(KafkaProperties properties) {
         return AdminClient.create(buildAdminProperties(properties));
     }
 

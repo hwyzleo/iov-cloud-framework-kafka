@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.kafka.core.KafkaAdmin;
 import org.springframework.kafka.core.reactive.ReactiveKafkaProducerTemplate;
 
 import java.time.Duration;
@@ -123,6 +124,38 @@ class KafkaTopicProvisioningAutoConfigurationTest {
                             (Map) context.getBeansOfType(ReactiveKafkaProducerTemplate.class);
                     assertThat(templates.keySet()).containsExactlyInAnyOrder(
                             "bytesReactiveKafkaProducerTemplate", "stringReactiveKafkaProducerTemplate");
+                    assertThat(context).hasSingleBean(KafkaTopicProvisioningCoordinator.class);
+                });
+    }
+
+    /**
+     * 与 Spring Boot 自带 KafkaAutoConfiguration 共存回归测试。
+     * <p>
+     * 缺陷：Provisioning 的 Admin Bean 曾命名为 {@code kafkaAdmin}，与 Spring Boot 的
+     * {@code KafkaAutoConfiguration#kafkaAdmin()}（类型 {@code KafkaAdmin}）同名；两个
+     * {@code @ConditionalOnMissingBean} 基于不同类型，互不退让，于是在
+     * {@code spring.main.allow-bean-definition-overriding=false}（Spring Boot 默认）下
+     * 直接抛 {@code BeanDefinitionOverrideException}。
+     */
+    @Test
+    void coexistsWithSpringBootKafkaAutoConfiguration() {
+        // 不手动注册 KafkaProperties：由 Boot 的 KafkaAutoConfiguration#@EnableConfigurationProperties 提供。
+        new ApplicationContextRunner()
+                .withAllowBeanDefinitionOverriding(false)
+                .withConfiguration(AutoConfigurations.of(
+                        org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration.class,
+                        KafkaTopicProvisioningAutoConfiguration.class))
+                .withPropertyValues(
+                        "iov.kafka.topic-provisioning.enabled=true",
+                        "iov.kafka.topic-provisioning.topics[0].name=sample.event",
+                        "iov.kafka.topic-provisioning.topics[0].partitions=3",
+                        "iov.kafka.topic-provisioning.topics[0].replication-factor=1")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    assertThat(context).hasBean("kafkaAdmin");
+                    assertThat(context).hasBean("kafkaTopicProvisioningAdmin");
+                    assertThat(context.getBean("kafkaAdmin")).isInstanceOf(KafkaAdmin.class);
+                    assertThat(context.getBean("kafkaTopicProvisioningAdmin")).isInstanceOf(Admin.class);
                     assertThat(context).hasSingleBean(KafkaTopicProvisioningCoordinator.class);
                 });
     }
