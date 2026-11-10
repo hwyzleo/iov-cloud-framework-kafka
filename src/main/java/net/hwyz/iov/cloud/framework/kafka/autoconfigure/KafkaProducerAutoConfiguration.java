@@ -14,7 +14,13 @@ import reactor.kafka.sender.SenderOptions;
 import java.util.Map;
 
 /**
- * 自动配置类
+ * Kafka 生产器自动配置（仅提供两个 Reactive Producer Template）。
+ *
+ * <p>类名刻意不叫 {@code KafkaAutoConfiguration}：Spring Boot 自身也有
+ * {@code org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration}，同名会让
+ * {@code AutoConfigurations.of(KafkaAutoConfiguration.class)}、{@code @AutoConfigureAfter} 等
+ * 引用在同包/同工程内静默指向错误的类，掩盖真实装配冲突。本类只负责生产器，Bean 名称与
+ * 泛型保持历史契约不变。</p>
  *
  * <p>{@code stringReactiveKafkaProducerTemplate} 为 String/String；
  * {@code bytesReactiveKafkaProducerTemplate} 为 String/byte[]，用于原样生产序列化 Proto bytes
@@ -28,7 +34,7 @@ import java.util.Map;
 @EnableKafka
 @Configuration
 @RequiredArgsConstructor
-public class KafkaAutoConfiguration {
+public class KafkaProducerAutoConfiguration {
 
     private final KafkaProperties properties;
 

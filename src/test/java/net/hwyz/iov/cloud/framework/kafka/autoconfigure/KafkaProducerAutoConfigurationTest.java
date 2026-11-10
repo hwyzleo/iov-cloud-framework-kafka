@@ -14,20 +14,20 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * KafkaAutoConfiguration 生产器序列化器契约测试。
+ * KafkaProducerAutoConfiguration 生产器序列化器契约测试。
  *
  * <p>Spring Boot 的 KafkaProperties 默认 value.serializer 为 StringSerializer；
  * byte[] 生产器必须显式覆盖为 ByteArraySerializer，否则 raw Proto bytes 生产会在
  * 发送阶段抛 {@code ClassCastException: [B cannot be cast to String}。
  */
-class KafkaAutoConfigurationTest {
+class KafkaProducerAutoConfigurationTest {
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withBean(KafkaProperties.class, KafkaProperties::new);
 
     @Test
     void bytesProducerUsesByteArrayValueSerializer() {
-        Map<String, Object> props = KafkaAutoConfiguration.bytesProducerProperties(new KafkaProperties());
+        Map<String, Object> props = KafkaProducerAutoConfiguration.bytesProducerProperties(new KafkaProperties());
 
         assertThat(props.get(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG))
                 .isEqualTo(StringSerializer.class);
@@ -37,7 +37,7 @@ class KafkaAutoConfigurationTest {
 
     @Test
     void stringProducerUsesStringSerializers() {
-        Map<String, Object> props = KafkaAutoConfiguration.stringProducerProperties(new KafkaProperties());
+        Map<String, Object> props = KafkaProducerAutoConfiguration.stringProducerProperties(new KafkaProperties());
 
         assertThat(props.get(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG))
                 .isEqualTo(StringSerializer.class);
@@ -47,7 +47,7 @@ class KafkaAutoConfigurationTest {
 
     @Test
     void bothProducerTemplatesAreRegistered() {
-        runner.withConfiguration(AutoConfigurations.of(KafkaAutoConfiguration.class))
+        runner.withConfiguration(AutoConfigurations.of(KafkaProducerAutoConfiguration.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     @SuppressWarnings({"rawtypes", "unchecked"})

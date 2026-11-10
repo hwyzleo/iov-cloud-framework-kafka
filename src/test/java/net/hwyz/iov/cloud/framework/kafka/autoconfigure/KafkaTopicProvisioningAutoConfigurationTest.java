@@ -109,8 +109,7 @@ class KafkaTopicProvisioningAutoConfigurationTest {
 
     @Test
     void existingProducerTemplateBeansArePreserved() {
-        runner.withConfiguration(AutoConfigurations.of(
-                        KafkaAutoConfiguration.class,
+        runner.withConfiguration(AutoConfigurations.of(KafkaProducerAutoConfiguration.class,
                         KafkaTopicProvisioningAutoConfiguration.class))
                 .withPropertyValues(
                         "iov.kafka.topic-provisioning.enabled=true",
